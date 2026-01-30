@@ -37,4 +37,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: bt_keylogger.fap
-        path: firmware/build/f7-firmware-*/.extapps/bt_keylogger.fap
+        path: firmware/build/**/.extapps/*.fap
+
