@@ -32,10 +32,15 @@ jobs:
     - name: Build
       working-directory: firmware
       run: ./fbt fap_bt_keylogger
+      
+    - name: Find FAP file
+      run: |
+        echo "Looking for .fap files..."
+        find firmware/build -name "*.fap" -type f
         
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: bt_keylogger.fap
-        path: firmware/build/**/.extapps/*.fap
-
+        name: bt_keylogger
+        path: firmware/build/f7-firmware-*/.extapps/bt_keylogger.fap
+        if-no-files-found: warn
