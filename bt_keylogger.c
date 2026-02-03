@@ -195,10 +195,8 @@ static int32_t worker_thread(void* ctx) {
     uint8_t buf[32];
     uint8_t len;
     uint8_t pipe;
-    uint8_t channel = 25;  // Canal inicial para Logitech
     uint32_t last_hop = 0;
     
-    // Logitech usa varios canales, hacer hop
     uint8_t logitech_channels[] = {2, 5, 8, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80};
     uint8_t ch_idx = 0;
     
