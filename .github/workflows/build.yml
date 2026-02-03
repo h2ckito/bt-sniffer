@@ -10,10 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout Xtreme Firmware
+    - name: Checkout Official Flipper Firmware (API 38 compatible)
       uses: actions/checkout@v4
       with:
-        repository: Flipper-XFW/Xtreme-Firmware
+        repository: flipperdevices/flipperzero-firmware
+        ref: '0.89.0'
         submodules: recursive
         path: firmware
         
