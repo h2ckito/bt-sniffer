@@ -33,14 +33,14 @@ jobs:
       working-directory: firmware
       run: ./fbt fap_bt_keylogger
       
-    - name: Find FAP file
+    - name: Copy FAP to output
       run: |
-        echo "Looking for .fap files..."
-        find firmware/build -name "*.fap" -type f
+        mkdir -p output
+        find firmware/build -name "bt_keylogger.fap" -exec cp {} output/ \;
+        ls -la output/
         
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: bt_keylogger
-        path: firmware/build/f7-firmware-*/.extapps/bt_keylogger.fap
-        if-no-files-found: warn
+        name: bt_keylogger.fap
+        path: output/bt_keylogger.fap
