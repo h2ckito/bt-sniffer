@@ -4,7 +4,7 @@
 #include <furi_hal_spi.h>
 #include "nrf24_driver.h"
 
-// Pines - AJUSTAR SEGÚN TU CONEXIÓN
+// Pines GPIO - Igual que otras apps NRF24
 #define CE_PIN   &gpio_ext_pa7
 #define CSN_PIN  &gpio_ext_pa4
 
@@ -27,103 +27,148 @@
 #define CMD_NOP         0xFF
 
 static bool initialized = false;
-static FuriHalSpiBusHandle* spi = NULL;
+static FuriHalSpiBusHandle* spi_handle = &furi_hal_spi_bus_handle_external;
 
-static uint8_t spi_xfer(uint8_t data) {
-    uint8_t rx = 0;
-    furi_hal_spi_bus_trx(spi, &data, &rx, 1, 100);
+static uint8_t nrf24_write_read(uint8_t data) {
+    uint8_t rx;
+    furi_hal_gpio_write(CSN_PIN, false);
+    furi_hal_spi_bus_trx(spi_handle, &data, &rx, 1, 1000);
+    furi_hal_gpio_write(CSN_PIN, true);
     return rx;
 }
 
-static uint8_t read_reg(uint8_t reg) {
+static uint8_t nrf24_read_reg(uint8_t reg) {
+    uint8_t tx_data[2] = {CMD_R_REG | reg, 0xFF};
+    uint8_t rx_data[2] = {0};
+    
     furi_hal_gpio_write(CSN_PIN, false);
-    spi_xfer(CMD_R_REG | reg);
-    uint8_t val = spi_xfer(CMD_NOP);
+    furi_hal_spi_bus_trx(spi_handle, tx_data, rx_data, 2, 1000);
     furi_hal_gpio_write(CSN_PIN, true);
-    return val;
+    
+    return rx_data[1];
 }
 
-static void write_reg(uint8_t reg, uint8_t val) {
+static void nrf24_write_reg(uint8_t reg, uint8_t data) {
+    uint8_t tx_data[2] = {CMD_W_REG | reg, data};
+    uint8_t rx_data[2] = {0};
+    
     furi_hal_gpio_write(CSN_PIN, false);
-    spi_xfer(CMD_W_REG | reg);
-    spi_xfer(val);
+    furi_hal_spi_bus_trx(spi_handle, tx_data, rx_data, 2, 1000);
+    furi_hal_gpio_write(CSN_PIN, true);
+}
+
+static void nrf24_cmd(uint8_t cmd) {
+    uint8_t rx;
+    furi_hal_gpio_write(CSN_PIN, false);
+    furi_hal_spi_bus_trx(spi_handle, &cmd, &rx, 1, 1000);
     furi_hal_gpio_write(CSN_PIN, true);
 }
 
 bool nrf24_init(void) {
     if(initialized) return true;
     
-    furi_hal_gpio_init_simple(CE_PIN, GpioModeOutputPushPull);
-    furi_hal_gpio_init_simple(CSN_PIN, GpioModeOutputPushPull);
+    // Configurar pines GPIO
+    furi_hal_gpio_init(CE_PIN, GpioModeOutputPushPull, GpioPullNo, GpioSpeedVeryHigh);
+    furi_hal_gpio_init(CSN_PIN, GpioModeOutputPushPull, GpioPullNo, GpioSpeedVeryHigh);
+    
     furi_hal_gpio_write(CE_PIN, false);
     furi_hal_gpio_write(CSN_PIN, true);
     
-    spi = &furi_hal_spi_bus_handle_external;
-    furi_hal_spi_acquire(spi);
+    // Adquirir SPI
+    furi_hal_spi_acquire(spi_handle);
     
+    furi_delay_ms(100);
+    
+    // Power down primero
+    nrf24_write_reg(REG_CONFIG, 0x00);
     furi_delay_ms(10);
     
-    write_reg(REG_EN_AA, 0x00);
-    write_reg(REG_EN_RXADDR, 0x3F);
-    write_reg(REG_SETUP_AW, 0x03);
-    write_reg(REG_RF_CH, 76);
-    write_reg(REG_RF_SETUP, 0x0F);
-    write_reg(REG_DYNPD, 0x3F);
-    write_reg(REG_FEATURE, 0x07);
+    // Configurar para sniffing
+    nrf24_write_reg(REG_EN_AA, 0x00);       // Deshabilitar auto-ACK
+    nrf24_write_reg(REG_EN_RXADDR, 0x3F);   // Habilitar todos los pipes
+    nrf24_write_reg(REG_SETUP_AW, 0x03);    // Dirección de 5 bytes
+    nrf24_write_reg(REG_RF_CH, 25);         // Canal 25 (2.425 GHz - común para Logitech)
+    nrf24_write_reg(REG_RF_SETUP, 0x26);    // 250kbps, 0dBm (Logitech usa 250kbps)
+    nrf24_write_reg(REG_DYNPD, 0x3F);       // Dynamic payload todos los pipes
+    nrf24_write_reg(REG_FEATURE, 0x04);     // Enable dynamic payload
     
-    furi_hal_gpio_write(CSN_PIN, false);
-    spi_xfer(CMD_FLUSH_RX);
-    furi_hal_gpio_write(CSN_PIN, true);
-    write_reg(REG_STATUS, 0x70);
+    // Flush RX FIFO
+    nrf24_cmd(CMD_FLUSH_RX);
     
-    write_reg(REG_CONFIG, 0x0F);
-    furi_hal_gpio_write(CE_PIN, true);
+    // Clear interrupts
+    nrf24_write_reg(REG_STATUS, 0x70);
     
+    // Power up en modo RX
+    nrf24_write_reg(REG_CONFIG, 0x0F);
     furi_delay_ms(5);
+    
+    // Activar CE
+    furi_hal_gpio_write(CE_PIN, true);
+    furi_delay_ms(1);
+    
     initialized = true;
+    FURI_LOG_I("NRF24", "Initialized on CH25 250kbps");
     return true;
 }
 
 void nrf24_deinit(void) {
     if(!initialized) return;
+    
     furi_hal_gpio_write(CE_PIN, false);
-    write_reg(REG_CONFIG, 0x00);
-    furi_hal_spi_release(spi);
+    nrf24_write_reg(REG_CONFIG, 0x00);
+    furi_hal_spi_release(spi_handle);
+    
     initialized = false;
 }
 
 bool nrf24_available(void) {
     if(!initialized) return false;
-    return (read_reg(REG_STATUS) & 0x40) != 0;
+    uint8_t status = nrf24_read_reg(REG_STATUS);
+    return (status & 0x40) != 0;  // RX_DR bit
 }
 
 bool nrf24_read(uint8_t* buf, uint8_t* len, uint8_t* pipe) {
     if(!initialized) return false;
     
-    uint8_t status = read_reg(REG_STATUS);
+    uint8_t status = nrf24_read_reg(REG_STATUS);
     if(!(status & 0x40)) return false;
     
     *pipe = (status >> 1) & 0x07;
     
+    // Leer longitud del payload
+    uint8_t tx[2] = {CMD_R_RX_PL_WID, 0xFF};
+    uint8_t rx[2] = {0};
     furi_hal_gpio_write(CSN_PIN, false);
-    spi_xfer(CMD_R_RX_PL_WID);
-    *len = spi_xfer(CMD_NOP);
+    furi_hal_spi_bus_trx(spi_handle, tx, rx, 2, 1000);
     furi_hal_gpio_write(CSN_PIN, true);
     
-    if(*len > 32) *len = 32;
-    
-    furi_hal_gpio_write(CSN_PIN, false);
-    spi_xfer(CMD_R_RX_PL);
-    for(uint8_t i = 0; i < *len; i++) {
-        buf[i] = spi_xfer(CMD_NOP);
+    *len = rx[1];
+    if(*len > 32) {
+        nrf24_cmd(CMD_FLUSH_RX);
+        *len = 0;
+        return false;
     }
+    
+    // Leer payload
+    uint8_t tx_buf[33] = {0};
+    uint8_t rx_buf[33] = {0};
+    tx_buf[0] = CMD_R_RX_PL;
+    
+    furi_hal_gpio_write(CSN_PIN, false);
+    furi_hal_spi_bus_trx(spi_handle, tx_buf, rx_buf, *len + 1, 1000);
     furi_hal_gpio_write(CSN_PIN, true);
     
-    write_reg(REG_STATUS, 0x40);
+    memcpy(buf, &rx_buf[1], *len);
+    
+    // Clear RX_DR flag
+    nrf24_write_reg(REG_STATUS, 0x40);
+    
     return true;
 }
 
 void nrf24_set_channel(uint8_t ch) {
     if(ch > 125) ch = 125;
-    write_reg(REG_RF_CH, ch);
+    furi_hal_gpio_write(CE_PIN, false);
+    nrf24_write_reg(REG_RF_CH, ch);
+    furi_hal_gpio_write(CE_PIN, true);
 }
