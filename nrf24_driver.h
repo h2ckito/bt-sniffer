@@ -1,8 +1,10 @@
+// NRF24 Driver Header - Usa la librería del firmware
 #pragma once
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
+// Funciones públicas
 bool nrf24_init(void);
 void nrf24_deinit(void);
 bool nrf24_available(void);
